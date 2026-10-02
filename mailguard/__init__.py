@@ -1,1 +1,1 @@
-
+"""MailGuard: defensive email triage."""
