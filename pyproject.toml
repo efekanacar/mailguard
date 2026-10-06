@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mailguard-eml"
-version = "0.1.0"
-description = "Offline email header triage and Cuckoo sandbox submission"
+version = "0.2.0"
+description = "Offline email header triage and Hybrid Analysis sandbox submission"
 requires-python = ">=3.10"
 dependencies = []
 

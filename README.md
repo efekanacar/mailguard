@@ -1,119 +1,145 @@
-# 🛡️ MailGuard
+# 🛡️ MailGuard 0.2
 
-**Şüpheli e-postayı açmadan incele. Başlıkları analiz et, ekleri ve bağlantıları sandbox'a gönder, JSON raporunu al.**
+**Şüpheli .eml dosyasının başlıklarını yerelde incele; eklerini ve bağlantılarını API anahtarınla Hybrid Analysis sandbox'ında test et.**
 
-MailGuard, `.eml` dosyaları için küçük bir Python savunma aracıdır. Yerel analiz internet bağlantısı veya üçüncü taraf Python paketi gerektirmez. Masaüstü dosya seçici ve komut satırı aynı analiz motorunu kullanır.
+Python 3.10+ gerekir. Yerel analiz internet veya üçüncü taraf Python paketi gerektirmez. Grafik arayüz ve CLI aynı analiz motorunu kullanır. Sandbox hizmetini [Hybrid Analysis API v2](https://hybrid-analysis.com/docs/api/v2) sağlar.
 
-```text
-.eml → Başlık + MIME analizi → Risk bulguları → JSON raporu
-                           ↘ Cuckoo REST API → VM analizi → Sandbox raporu
+## Ubuntu'da başlat
+
+Yeni kurulum:
+
+```bash
+sudo apt update
+sudo apt install python3 python3-tk git
+git clone https://github.com/efekanacar/mailguard.git mailguard-ha
+cd mailguard-ha
+python3 -m mailguard.cli --gui
 ```
 
-## Neler yapar?
+ZIP indirdiysen çıkartıp **README.md ve pyproject.toml bulunan ana klasörde** terminal aç. mailguard/ alt klasörüne girme. mailguard.cli, mailguard/cli.py Python modülünün adıdır; noktalı isimle ayrı dosya arama.
+
+```bash
+cd ~/Downloads/mailguard-main
+python3 -m mailguard.cli --gui
+```
+
+Önceki sürümü ZIP olarak indirdiysen güncel ZIP'i ayrı klasöre çıkart. Git ile klonladıysan repo kökünde `git pull --ff-only` kullanabilirsin. Pencere başlığında **MailGuard 0.2 | Hybrid Analysis** görünmeli.
+
+## Arayüzle .eml ve sandbox kullanımı
+
+1. Mail istemcisinde mesajı **orijinali indir / .eml olarak kaydet** ile dışarı aktar. Ekleri açma.
+2. **Güvenilir authserv-id** alanını bilmiyorsan boş bırak. Bu alan mail adresin veya API anahtarın değildir; kendi alıcı mail sunucunun Authentication-Results kimliğidir.
+3. **Hybrid Analysis API anahtarı** alanına kendi anahtarını yapıştır. Alan maskelidir; program anahtarı dosyaya veya JSON raporuna kaydetmez. Anahtarında dosya/URL gönderme yetkisi olmalı; yalnızca arama yetkisi yeterli değildir.
+4. **Analiz ortamı ID** başlangıçta 160 olur: uzak sandbox'ın Windows 10 ortamıdır. MailGuard'ı Ubuntu'da çalıştırman uzak ortam seçimini değiştirmez. Başka ortam için aşağıdaki listeleme komutunu kullan.
+5. **Ekleri ve URL'leri Hybrid Analysis'e gönder** kutusunu işaretle.
+6. **Mail seç ve analiz et** düğmesine bas; .eml dosyasını seç ve gönderim onayını kabul et. Ekler ve uygun HTTP/HTTPS bağlantıları gönderilir; bütün .eml gönderilmez.
+7. Sonuçları incele; **JSON raporunu kaydet** ile kaydet. Sandbox görevlerinde job_id, varsa report_url, verdict ve threat_score bulunur.
+
+Yerel başlık analizi için kutuyu kapalı bırak; anahtar gerekmez. **not_requested**, sandbox testi istenmedi demektir.
+
+Hybrid Analysis'e gönderilen içerik ve raporlar topluluk veya ortaklarla paylaşılabilir; bu araç özel analiz garantisi vermez. Gizli ekleri, özel URL'leri ve erişim token'larını göndermeyin. API anahtarını GitHub'a veya sohbete yazmanız gerekmez.
+
+## Komut satırı: python3
+
+Yerel örnek analiz; dışarı gönderim yok:
+
+```bash
+python3 -m mailguard.cli examples/suspicious.eml -o reports/demo.json
+```
+
+Örnek mail sentetiktir. Gerçek mailini yerel samples/ klasörüne koyabilirsin:
+
+```bash
+mkdir -p samples
+python3 -m mailguard.cli samples/supheli.eml -o reports/analiz.json
+```
+
+CLI sandbox için anahtarı Bash'te gizli girişle oku; anahtar komut geçmişine veya süreç argümanlarına girmez:
+
+```bash
+read -rsp 'Hybrid Analysis API KEY: ' HYBRID_ANALYSIS_API_KEY
+echo
+export HYBRID_ANALYSIS_API_KEY
+python3 -m mailguard.cli samples/supheli.eml \
+  --submit --accept-upload --environment-id 160 \
+  --max-targets 5 --wait 300 -o reports/analiz.json
+```
+
+--submit gönderimi açar; --accept-upload üçüncü tarafa veri aktarımını kabul eder. İkisi de gereklidir. Anahtarı CLI argümanı olarak alan seçenek yoktur. Ortam değişkeni GUI alanını da doldurur. İşin bitince `unset HYBRID_ANALYSIS_API_KEY` ile mevcut kabuktan kaldırabilirsin.
+
+Güncel analiz ortamlarını listele; mail gönderilmez:
+
+```bash
+python3 -m mailguard.cli --list-environments
+```
+
+Kuyrukta kalan analiz için rapordaki gerçek job_id değerini kullanarak **yeniden yüklemeden** sonra sorgula. GERCEK_JOB_ID bir yer tutucudur:
+
+```bash
+python3 -m mailguard.cli --job-id GERCEK_JOB_ID -o reports/sandbox-sonuc.json
+```
+
+Bu komut tek durum kontrolü yapar; tamamlandıysa analiz özetini alır. Bekliyorsa sonra tekrar çalıştır. İlk mail raporunu değiştirmez; ayrı sandbox sonucu kaydeder.
+
+Kendi alıcı MTA kimliğini biliyorsan analiz komutuna `--trusted-authserv mx.sirketin.example` ekleyebilirsin. Birden fazla değer için seçeneği tekrarla.
+
+## Neler analiz edilir?
 
 | Özellik | Davranış |
 | --- | --- |
-| Başlık analizi | From, Reply-To, Return-Path farklarını, eksik/tekrarlı başlıkları gösterir |
-| SPF / DKIM / DMARC | Belirtilen güvenilir alıcı MTA'nın üstteki Authentication-Results başlığını yorumlar |
+| Başlıklar | From, Reply-To, Return-Path farkları; eksik/tekrarlı alanlar |
+| SPF / DKIM / DMARC | Güvenilir alıcı MTA'nın üstteki Authentication-Results başlığını yorumlar |
 | Received zinciri | Ham başlıkları ve ayrıştırılabilen hop tarihlerini raporlar |
-| Bağlantılar | Düz metin ve HTML bağlantılarını çıkarır; görüntüleme listesinde etkisizleştirir |
+| URL'ler | Düz metin ve HTML bağlantılarını çıkarır; görüntüleme listesinde etkisizleştirir |
 | Ekler | Dosya adı, MIME türü, boyut, SHA-256 ve riskli uzantıları inceler |
-| Sandbox | Cuckoo 2 REST API ile ek/URL gönderir, görevleri izler, tamamlanan JSON raporunu alır |
-| Risk özeti | Açıklamalı sezgisel puan: 0–19 düşük, 20–49 orta, 50–100 yüksek |
+| Sandbox | Hybrid Analysis dosya/URL gönderimi, durum sorgusu ve JSON analiz özeti |
+| Yerel risk | Açıklamalı sezgisel puan: 0–19 düşük, 20–49 orta, 50–100 yüksek |
 
-## Hızlı başlangıç
+Sabit resmi HTTPS adresi https://hybrid-analysis.com/api/v2 kullanılır. Uç noktalar /submit/file, /submit/url, /report/{job_id}/state, /report/{job_id}/summary ve /system/environments olur. TLS doğrulaması açıktır; yönlendirmeler takip edilmez. Cuckoo kurman veya yerel sandbox VM çalıştırman gerekmez.
 
-Python **3.10+** gerekir. Repoyu indirdikten sonra repo klasöründe:
+## Durumlar ve sorun giderme
 
-```bash
-python -m mailguard.cli examples/suspicious.eml --trusted-authserv mx.example.net -o reports/demo.json
-```
-
-Örnekteki tüm mail adresleri ve bağlantı sentetiktir. Gerçek mailini mail istemcisinden **orijinali indir / .eml olarak kaydet** ile dışarı aktar; dosyayı `samples/` klasörüne koy.
-
-```bash
-python -m mailguard.cli samples/supheli.eml -o reports/analiz.json
-```
-
-İstersen sanal ortama kurup `mailguard` komutunu kullanabilirsin:
-
-```bash
-python -m venv .venv
-# Windows PowerShell:
-.venv\Scripts\Activate.ps1
-# macOS / Linux:
-# source .venv/bin/activate
-python -m pip install -e .
-mailguard --gui
-```
-
-Kurulum yapmadan pencereyi açmak da mümkün:
-
-```bash
-python -m mailguard.cli --gui
-```
-
-Pencerede `.eml` seç ve **Mail seç ve analiz et** düğmesine bas. JSON raporunu kaydedebilirsin. GUI için Tkinter gerekir; Windows Python kurulumunda genellikle bulunur, Linux dağıtımlarında `python3-tk` ayrıca gerekebilir. Tkinter yoksa CLI kullanılabilir.
-
-## Gerçek sandbox testi
-
-MailGuard bir VM sandbox kurmaz. **Çalışan, ayrı ve izole bir Cuckoo 2 sandbox + REST API** gerekir. Sandbox yönetimi, VM imajı, analiz paketleri ve güvenli ağ politikası operatörün sorumluluğundadır. Desteklenen uç noktalar [Cuckoo'nun resmi API kaynağındaki](https://github.com/cuckoosandbox/cuckoo/blob/master/docs/book/usage/api.rst) `/tasks/create/file`, `/tasks/create/url`, `/tasks/view/{id}` ve `/tasks/report/{id}/json` uç noktalarıdır. CAPE apiv2, VirusTotal ve diğer servisler bu sürümde desteklenmez.
-
-API token'ını komut satırına veya repoya yazma; ortam değişkeninde tut:
-
-```powershell
-$env:CUCKOO_API_TOKEN = 'KENDI_SANDBOX_TOKENIN'
-python -m mailguard.cli samples/supheli.eml `
-  --trusted-authserv mx.sirketin.example `
-  --sandbox-url https://sandbox.sirketin.example `
-  --submit --wait 120 -o reports/analiz.json
-```
-
-```bash
-export CUCKOO_API_TOKEN='KENDI_SANDBOX_TOKENIN'
-python -m mailguard.cli samples/supheli.eml --sandbox-url https://sandbox.sirketin.example --submit -o reports/analiz.json
-```
-
-Yerel API için `http://127.0.0.1:8090` kullanılabilir. Uzak sunucularda HTTPS zorunludur; TLS doğrulaması kapatılmaz. API yönlendirmeleri takip edilmez. `--submit` verilerin seçtiğin sunucuya aktarılmasına izin verir. GUI'de ayrıca sandbox kutusunu işaretlemek ve gönderimi onaylamak gerekir.
-
-Her mailde en fazla **20 hedef** gönderilir; kalanların sayısı raporda bulunur. İstek başına 15 saniye ağ zaman aşımı vardır. `--wait` gönderim aşamasından **sonraki** rapor bekleme süresidir; toplam çalışma süresi gönderimler ve ağ istekleri nedeniyle daha uzun olabilir. `--wait 0` yalnızca gönderim yapar. Gönderilen ama bitmeyen görevler `pending`, başarısız istekler `error` olarak kalır; temiz sonucu üretilmez. Rapor alınmayan görevleri task ID ile sandbox panelinde incele.
-
-## Güven ve gizlilik sınırları
-
-- Bu araç phishing tespiti için ön inceleme yapar. Düşük puan, SPF pass veya sandbox'ta bulgu olmaması mailin güvenli olduğunu kanıtlamaz. Statik risk puanı ve dinamik sandbox raporu ayrı alanlardır; sandbox sonucu otomatik olarak güvenli/güvensiz kararına çevrilmez.
-- SPF/DKIM/DMARC yerelde kriptografik/DNS doğrulamasıyla yeniden hesaplanmaz. `--trusted-authserv` yalnızca kendi alıcı mail sunucunun authserv-id değeri olmalı. Alıcı MTA sahte Authentication-Results başlıklarını temizlemiyorsa gönderici aynı değeri taklit edebilir. Alt Authentication-Results başlıkları değerlendirmeye alınmaz.
-- Header/body içeriği veri olarak ele alınır. HTML işlenerek ekrana render edilmez; bağlantılar açılmaz ve ekler yerel diske çıkarılmaz veya çalıştırılmaz. Arşivler açılmaz; URL yönlendirmeleri ve marka benzerliği analizi yapılmaz.
-- Özel/yerel IP'ler, localhost ve bazı yerel alan adları URL gönderiminden çıkarılır. Bu kontrol DNS çözmez ve DNS rebinding'i önlemez; sandbox ağında özel ağ erişimini ayrıca engelle.
-- Mail sınırı **25 MiB**. Dosyadan alınan ek adları disk yolu olarak kullanılmaz. Orijinal mailin bütünü sandbox'a gönderilmez; çıkarılan ekler ve uygun URL'ler gönderilir. Bunlar da özel veri veya erişim token'ları içerebilir.
-- Tam JSON raporu başlıkları, mail adreslerini ve sandbox'ın döndürdüğü hassas bilgileri içerebilir. Mail ve raporları GitHub'a yükleme. `.gitignore`, `samples/`, `reports/`, `.env` ve gerçek `.eml` dosyalarını dışarıda tutar.
-- Defang yalnızca çıkarılan URL listesine ve sandbox hedef etiketlerine uygulanır; ham mail başlıkları ve sandbox raporları özgün veri içerir.
-
-## Rapor ve çıkış kodları
-
-```json
-{
-  "score": 60,
-  "verdict": "yüksek",
-  "findings": [{"code": "authentication_failure", "message": "...", "points": 20}],
-  "sandbox": {"status": "not_requested", "tasks": []}
-}
-```
-
-Örnek sadeleştirilmiştir. Tam raporda SHA-256, başlıklar, auth sonuçları, ekler, URL'ler, sınırlamalar ve sandbox görevleri bulunur. `finished`, tüm gönderilen görevlerin raporlandığı anlamına gelir; güvenli oldukları anlamına gelmez. `no_targets`, sandbox'a gönderilecek hedef olmadığını belirtir.
-
-| Kod | Anlam |
+| Durum | Anlamı / yapılacak işlem |
 | --- | --- |
-| 0 | Analiz tamamlandı; phishing verdictinden bağımsız |
-| 1 | Dosya/ayar hatası |
-| 2 | Eksik sandbox sonucu veya CLI kullanım hatası |
+| sandbox.status: not_requested | Gönderim kapalı; GUI kutusunu aç veya CLI'de iki gönderim seçeneğini kullan |
+| no_targets | Mailde gönderilebilecek ek veya uygun genel URL yok |
+| incomplete | Bekleyen/başarısız görev veya gönderilmeyen hedef var; tasks ve skipped_targets alanlarını incele |
+| finished | Tüm farklı hedeflerin raporları alındı; mailin güvenli olduğu anlamına gelmez |
+| Görev pending | Kuyrukta veya işlemde; aynı job_id ile sonra sorgula |
+| Görev reported | Özet alındı; verdict, threat_score ve result alanlarını incele |
+| Görev failed / error | Analiz/API isteği başarısız; temiz sonucu üretilmez |
+| HTTP 401 | API anahtarı kabul edilmedi |
+| HTTP 403 | Anahtarın işleme yetkisi yok; hesap/API izinlerini kontrol et |
+| HTTP 429 | Kota/hız sınırı; sonra sorgula, aynı maili tekrar yükleme |
+| HTTP 410 | İlgili alt raporları Hybrid Analysis panelinde incele |
+| No module named tkinter | sudo apt install python3-tk |
+| No module named mailguard | README.md bulunan ana klasöre dön |
 
-## Geliştirme ve test
+Varsayılan en fazla **5 farklı hedef**, seçenekle en fazla **20** hedef gönderilir. Aynı SHA-256 ekler ve aynı URL'ler tek kez gönderilir. Hedef sınırı/API hatasıyla gönderilmeyenler skipped_targets, tekrarlar duplicate_targets alanında sayılır. 401/403/429 sonrasında yeni gönderim ve sorgular durdurulur.
+
+Varsayılan bekleme **120 saniye**, en çok 3600 saniyedir. --wait 0 yalnızca gönderim yapar. Bekleme gönderimden sonra başlar; ağ istekleri nedeniyle toplam süre daha uzun olabilir. İstek zaman aşımı 15 saniye; durum sorgu döngüleri arası 15 saniyedir. Kuyruk ve hesap kotası sonucu etkiler. Aynı maili tekrar çalıştırmak yeni gönderimler yapabilir; bekleyen iş için --job-id kullan.
+
+Çıkış kodları: **0** yerel analiz veya tamamlanmış sonuç; **1** dosya/ayar/API hatası; **2** eksik sandbox sonucu veya CLI kullanım hatası. Yerel risk seviyesi çıkış koduna çevrilmez.
+
+## Güven sınırları
+
+- Düşük puan, SPF pass veya sandbox'ta bulgu olmaması güvenli mail kanıtı değildir. Yerel risk puanı ve uzak sandbox verdict'i ayrı alanlardır.
+- SPF/DKIM/DMARC kriptografik/DNS doğrulamasıyla yeniden hesaplanmaz. Authserv-id kendi alıcı sunucuna ait olmalı. MTA sahte Authentication-Results başlıklarını temizlemiyorsa kimlik taklit edilebilir; alttaki başlıklar değerlendirilmez.
+- HTML render edilmez; bağlantılar açılmaz, ekler yerelde çalıştırılmaz veya diske çıkarılmaz. Arşivler açılmaz; URL yönlendirme/marka benzerliği analizi yapılmaz.
+- Yerel/özel IP'ler, localhost ve bazı yerel alan adları URL gönderiminden çıkarılır. Kontrol DNS çözmez ve DNS rebinding'i önlemez.
+- Mail sınırı **25 MiB**; API yanıt sınırı 10 MiB. Eklerin özgün adları disk yolu veya HTTP başlığı olarak kullanılmaz.
+- JSON raporları mail başlıklarını, adresleri ve uzak analiz ayrıntılarını içerir. Gerçek maili, raporları ve anahtarı repoya yükleme. .gitignore yerel samples/, reports/, .env ve gerçek .eml dosyalarını dışarıda tutar.
+- URL etkisizleştirme çıkarılan listeye ve hedef etiketlerine uygulanır; ham başlıklar ve uzak raporlar özgün veriyi içerebilir.
+
+## Geliştirme ve sürüm geçişi
 
 ```bash
-python -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v
 ```
 
-Testler sahte HTTP sandbox üzerinden multipart gönderim, token kullanımı, durum sorgusu, rapor alma ve redirect engellemesini; ayrıca sahte auth başlıklarını, dosya boyutu sınırını ve yerel URL engellemeyi kontrol eder. GitHub Actions farklı Python sürümlerinde testleri çalıştırır. **Gerçek VM detonasyonu test paketinin parçası değildir.**
+Testler sahte API ile dosya/URL gönderimi, anahtar başlığı, rapor alma, kota/yetki hataları, yönlendirme engelleme ve CLI onayını kontrol eder. Başlık güveni, dosya boyutu ve yerel URL engelleme de test edilir. Gerçek API anahtarıyla sandbox çalıştırma test paketinin parçası değildir. GitHub Actions Python 3.10, 3.12 ve 3.13 kullanır.
+
+0.2'de --sandbox-url ve CUCKOO_API_TOKEN kaldırıldı. Yerine HYBRID_ANALYSIS_API_KEY, --environment-id ve açık gönderim kabulü kullanılır. Eski Cuckoo PDF kitapçığı bu sürümün sandbox ayarlarını anlatmaz; güncel kullanım bu README'dedir.
 
 ## Lisans
 
