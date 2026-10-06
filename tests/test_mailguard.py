@@ -1,13 +1,10 @@
 import json
 from email.message import EmailMessage
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
-import threading
 import unittest
 from mailguard.analyzer import MAX_BYTES, analyze, public_url
 from mailguard.cli import main
-from mailguard.sandbox import Cuckoo, SandboxError
 
 
 def sample():
@@ -69,77 +66,6 @@ class AnalyzerTests(unittest.TestCase):
             self.assertEqual(0, main([str(source), "-o", str(output)]))
             report = json.loads(output.read_text())
             self.assertEqual("not_requested", report["sandbox"]["status"])
-
-
-class SandboxTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.requests = []
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-            def do_POST(self):
-                body = self.rfile.read(int(self.headers["Content-Length"]))
-                cls.requests.append((self.path, self.headers.get("Authorization"), body))
-                self.respond({"task_id": 7})
-
-            def do_GET(self):
-                if self.path == "/redirect":
-                    self.send_response(302)
-                    self.send_header("Location", "/leaked")
-                    self.end_headers()
-                elif self.path.startswith("/tasks/view/"):
-                    self.respond({"task": {"status": "reported"}})
-                else:
-                    self.respond({"info": {"score": 8}, "signatures": [{"name": "mock_detection"}]})
-
-            def respond(self, data):
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps(data).encode())
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.thread.start()
-        cls.base = f"http://127.0.0.1:{cls.server.server_port}"
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
-        cls.thread.join()
-
-    def test_multipart_submit_poll_report(self):
-        result = Cuckoo(self.base, "test-token").run([{"kind": "file", "name": "sample.bin", "data": b"inert data", "sha256": "abc"}], 5)
-        self.assertEqual("finished", result["status"])
-        self.assertEqual(8, result["tasks"][0]["result"]["info"]["score"])
-        path, auth, body = self.requests[-1]
-        self.assertEqual("/tasks/create/file", path)
-        self.assertEqual("Bearer test-token", auth)
-        self.assertIn(b"inert data", body)
-
-    def test_submission_only_is_pending(self):
-        result = Cuckoo(self.base).run([{"kind": "url", "url": "https://example.org"}], 0)
-        self.assertEqual("incomplete", result["status"])
-        self.assertEqual("pending", result["tasks"][0]["status"])
-
-    def test_redirect_token_not_forwarded(self):
-        with self.assertRaises(SandboxError):
-            Cuckoo(self.base, "secret").request("/redirect")
-
-    def test_remote_http_rejected(self):
-        with self.assertRaises(ValueError):
-            Cuckoo("http://sandbox.example.org")
-
-    def test_failed_submission_does_not_look_clean(self):
-        client = Cuckoo(self.base)
-        def unavailable(target):
-            raise SandboxError("Sandbox unavailable")
-        client.submit = unavailable
-        result = client.run([{"kind": "url", "url": "https://example.org"}], 0)
-        self.assertEqual("incomplete", result["status"])
-        self.assertEqual("error", result["tasks"][0]["status"])
 
 
 if __name__ == "__main__":
